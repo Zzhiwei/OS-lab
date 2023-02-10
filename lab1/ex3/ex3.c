@@ -58,6 +58,11 @@ int main(int argc, char *argv[]) {
         // printf("%d\n", num);
         run_instruction(lst, num, fp);
     }
+    
+    
+    fclose(fp);
+    reset_list(lst);
+    free(lst);
 }
 
 
