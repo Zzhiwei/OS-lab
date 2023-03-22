@@ -5,10 +5,12 @@
 #define QUEUE_SIZE 100
 #define INIT_QUEUE(qName) Queue qName = {.front = -1, .back = -1};
 
-
 int RED = 1;
 int GREEN = 2;
 int BLUE = 3;
+
+int isFirst = true;
+int firstId;
 
 int red_count = 0;
 int green_count = 0;
@@ -40,9 +42,12 @@ typedef struct PackerQueue {
     int arr[QUEUE_SIZE];
 } Queue;
 
-INIT_QUEUE(red_queue);
-INIT_QUEUE(green_queue);
-INIT_QUEUE(blue_queue);
+INIT_QUEUE(red_inqueue);
+INIT_QUEUE(red_outqueue);
+INIT_QUEUE(green_inqueue);
+INIT_QUEUE(green_outqueue);
+INIT_QUEUE(blue_inqueue);
+INIT_QUEUE(blue_outqueue);
 
 void enQueue(int x, Queue *q) {
     if (q->back == QUEUE_SIZE - 1) {
@@ -57,11 +62,13 @@ void enQueue(int x, Queue *q) {
     q->arr[q->back] = x;
 }
 
-void deQueue(Queue *q) {
+int deQueue(Queue *q) {
     if (q->front == -1 || q->front > q->back) {
         printf("Queue Underflow\n");
     } else {
+        int res = q->arr[q->front];
         q->front++;
+        return res;
     }
 }
 
@@ -71,6 +78,21 @@ int peekQueue(Queue *q) {
         return -1;
     } else {
         return q->arr[q->front];
+    }
+}
+
+int len(Queue *q) {
+    if (q->front == -1 || q->front > q->back) {
+        return 0;
+    }
+    return q->back - q->front  + 1;
+}
+
+bool isQueueEmpty(Queue *q) {
+    if (q->front == -1 || q->front > q->back) {
+        return true;
+    } else {
+        return false;
     }
 }
 
@@ -156,13 +178,23 @@ int *getCount(int colour) {
     }
 }
 
-int *getQueue(int colour) {
+int *getInQueue(int colour) {
     if (colour == RED) {
-        return &red_queue;
+        return &red_inqueue;
     } else if (colour == GREEN) {
-        return &green_queue;
+        return &green_inqueue;
     } else if (colour == BLUE) {
-        return &blue_queue;
+        return &blue_inqueue;
+    }
+}
+
+int *getOutQueue(int colour) {
+    if (colour == RED) {
+        return &red_outqueue;
+    } else if (colour == GREEN) {
+        return &green_outqueue;
+    } else if (colour == BLUE) {
+        return &blue_outqueue;
     }
 }
 
@@ -171,34 +203,37 @@ int pack_ball(int colour, int id) {
     sem_t *turnstile_2 = getSecondTurnstile(colour);
     sem_t *mutex = getMutex(colour);
     int *count = getCount(colour);
-    int *balls = getBalls(colour);
-    
-    // balls[*count] = id;
+    int *inqueue = getInQueue(colour);
+    int *outqueue = getInQueue(colour);
 
-    sem_wait(mutex); // enter CS
+    sem_wait(mutex); // *** enter CS ***
     *count = *count + 1;
-    // enqueue here
-    // 1st enqueue = 1st to exit based on question definition
+    // enqueue here - 1st enqueue = 1st to exit based on question definition
+    enQueue(id, inqueue);
     if (*count == 2) {
         sem_wait(turnstile_2); //lock second
         sem_post(turnstile_1); //unlock first
     }
-    sem_post(mutex); // exit CS
+    sem_post(mutex); // *** exit CS ***
 
-    sem_wait(turnstile_1); //1st process blocks here,
-    sem_post(turnstile_1);
+    sem_wait(turnstile_1); // processes blocks here
+    sem_post(turnstile_1); // allows paired process to proceed
 
-    sem_wait(mutex); // enter CS
+    sem_wait(mutex); // *** enter CS ***
     *count = *count - 1;
     if (*count == 0) {
-        sem_wait(turnstile_1); //lock first
-        sem_post(turnstile_2); //unlock second
+        sem_wait(turnstile_1); //lock first (for next pair)
+        sem_post(turnstile_2); //unlock second (for its partner to proceed in wait tt2 below)
     }
-    sem_post(mutex); // exit CS
+    // dequeue(inqueue);
+    // enqueue(id, outqueue);
+    sem_post(mutex); // *** exit CS ***
 
-    sem_wait(turnstile_2); //1st process blocks here again
-    sem_post(turnstile_2);
-
-
-    return balls[0] == id ? balls[1] : balls[0];
+    sem_wait(turnstile_2); // 1st processes blocks here because 2nd process locks second in 1st if block
+    // at this point, the other process might or might not have been moved to outQueue
+    int res;
+    if (isFirst) {
+        dequeue
+    }
+    sem_post(turnstile_2); // allows paired process that comes after it to proceed
 }

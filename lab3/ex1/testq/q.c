@@ -1,4 +1,5 @@
 #include "stdio.h"
+#include "stdbool.h"
 
 #define QUEUE_SIZE 100
 #define INIT_QUEUE(qName) Queue qName = {.front = -1, .back = -1};
@@ -27,12 +28,29 @@ void enQueue(int x, Queue *q) {
     q->arr[q->back] = x;
 }
 
-void deQueue(Queue *q) {
+int deQueue(Queue *q) {
     if (q->front == -1 || q->front > q->back) {
         printf("Queue Underflow\n");
     } else {
+        int res = q->arr[q->front];
         q->front++;
+        return res;
     }
+}
+
+bool isQueueEmpty(Queue *q) {
+    if (q->front == -1 || q->front > q->back) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+int len(Queue *q) {
+    if (q->front == -1 || q->front > q->back) {
+        return 0;
+    }
+    return q->back - q->front  + 1;
 }
 
 int peekQueue(Queue *q) {
@@ -57,20 +75,32 @@ void show(Queue *q)
 } 
 
 int main() {
+    // if (isQueueEmpty(&red_queue)) printf("queue is empty\n"); else printf("queue is not empty\n");
     enQueue(1, &red_queue);
+    printf("qsize=%d\n", len(&red_queue));
+    show(&red_queue);
     enQueue(2, &red_queue);
-    enQueue(3, &red_queue);
+    show(&red_queue); // 1 2
+    printf("qsize=%d\n", len(&red_queue)); // 2
+    enQueue(3, &red_queue); 
+    printf("qsize=%d\n", len(&red_queue)); // 3
     enQueue(4, &red_queue);
+    show(&red_queue); // 1 2 3 4
+    printf("qsize=%d\n", len(&red_queue)); // 4
+    printf("dequeued %d\n", deQueue(&red_queue));
     show(&red_queue);
-    deQueue(&red_queue);
-    show(&red_queue);
+    printf("qsize=%d\n", len(&red_queue)); // 3
     enQueue(7, &red_queue);
     show(&red_queue);
+    printf("qsize=%d\n", len(&red_queue)); // 4
+    printf("dequeued %d\n", deQueue(&red_queue));
+    printf("dequeued %d\n", deQueue(&red_queue));
+    printf("dequeued %d\n", deQueue(&red_queue));
+
+    show(&red_queue); // 7
+    printf("qsize=%d\n", len(&red_queue)); // 1
     deQueue(&red_queue);
-    deQueue(&red_queue);
-    deQueue(&red_queue);
-    show(&red_queue);
-    deQueue(&red_queue);
+    printf("qsize=%d\n", len(&red_queue)); // 0
     show(&red_queue);
     deQueue(&red_queue);
     enQueue(9, &red_queue);
