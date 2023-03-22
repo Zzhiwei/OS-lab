@@ -182,7 +182,7 @@ static void command(/* pass necessary parameters*/) {
 void my_init(void) {
 
            /******* FILL IN THE CODE *******/
-
+      
         // use signal() with SIGTSTP to setup a signalhandler for ctrl+z : ex4
         // use signal() with SIGINT to setup a signalhandler for ctrl+c  : ex4
 
@@ -191,11 +191,20 @@ void my_init(void) {
 }
 
 void my_process_command(size_t num_tokens, char **tokens) {
-
+        //char **tokens just means an array of char * (string)
 
         /******* FILL IN THE CODE *******/
 
         // Split tokens at NULL or ; to get a single command (ex1, ex2, ex3, ex4(fg command))
+        int i = 0;
+        printf("hello world");
+        for (i=0;i<num_tokens;i++) {
+            char* currToken = *tokens;
+            printf("%s", currToken);
+            tokens += strlen(currToken);
+        }
+        
+        
 
         // for example :  /bin/ls ; /bin/sleep 5 ; /bin/pwd
         // split the above line as first command : /bin/ls , second command: /bin/pwd  and third command:  /bin/pwd

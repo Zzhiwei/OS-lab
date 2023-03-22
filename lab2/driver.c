@@ -42,6 +42,7 @@ static void process_commands(FILE *file) {
             }
             break;
         }
+        printf("aft getline");
         char **tokens = NULL;
         size_t num_tokens = tokenise(line, &tokens);
         if (!tokens) {
