@@ -1,6 +1,7 @@
 #include "packer.h"
 #include "semaphore.h"
 #include "stdio.h"
+#include "stdbool.h"
 
 #define QUEUE_SIZE 100
 #define INIT_QUEUE(qName) Queue qName = {.front = -1, .back = -1};
@@ -178,7 +179,7 @@ int *getCount(int colour) {
     }
 }
 
-int *getInQueue(int colour) {
+Queue *getInQueue(int colour) {
     if (colour == RED) {
         return &red_inqueue;
     } else if (colour == GREEN) {
@@ -188,7 +189,7 @@ int *getInQueue(int colour) {
     }
 }
 
-int *getOutQueue(int colour) {
+Queue *getOutQueue(int colour) {
     if (colour == RED) {
         return &red_outqueue;
     } else if (colour == GREEN) {
@@ -203,12 +204,14 @@ int pack_ball(int colour, int id) {
     sem_t *turnstile_2 = getSecondTurnstile(colour);
     sem_t *mutex = getMutex(colour);
     int *count = getCount(colour);
-    int *inqueue = getInQueue(colour);
-    int *outqueue = getInQueue(colour);
+    Queue *inqueue = getInQueue(colour);
+    Queue *outqueue = getInQueue(colour);
 
     sem_wait(mutex); // *** enter CS ***
     *count = *count + 1;
     // enqueue here - 1st enqueue = 1st to exit based on question definition
+    // printf(">>>>>> enqueuing %d\n", id);
+    // show(inqueue);
     enQueue(id, inqueue);
     if (*count == 2) {
         sem_wait(turnstile_2); //lock second
@@ -231,9 +234,23 @@ int pack_ball(int colour, int id) {
 
     sem_wait(turnstile_2); // 1st processes blocks here because 2nd process locks second in 1st if block
     // at this point, the other process might or might not have been moved to outQueue
-    int res;
-    if (isFirst) {
-        dequeue
-    }
+    
     sem_post(turnstile_2); // allows paired process that comes after it to proceed
+
+    int otherId;
+
+    sem_wait(mutex);
+    if (isFirst) {
+        firstId = deQueue(inqueue);
+        otherId = peekQueue(inqueue);
+        isFirst = false;
+    } else {
+        otherId = firstId;
+        deQueue(inqueue);
+        //reset
+        isFirst = true;
+        firstId = -99999;
+    }
+    sem_post(mutex);
+    return otherId;
 }
