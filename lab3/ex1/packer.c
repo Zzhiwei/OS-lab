@@ -205,13 +205,9 @@ int pack_ball(int colour, int id) {
     sem_t *mutex = getMutex(colour);
     int *count = getCount(colour);
     Queue *inqueue = getInQueue(colour);
-    Queue *outqueue = getInQueue(colour);
 
     sem_wait(mutex); // *** enter CS ***
     *count = *count + 1;
-    // enqueue here - 1st enqueue = 1st to exit based on question definition
-    // printf(">>>>>> enqueuing %d\n", id);
-    // show(inqueue);
     enQueue(id, inqueue);
     if (*count == 2) {
         sem_wait(turnstile_2); //lock second
@@ -228,17 +224,14 @@ int pack_ball(int colour, int id) {
         sem_wait(turnstile_1); //lock first (for next pair)
         sem_post(turnstile_2); //unlock second (for its partner to proceed in wait tt2 below)
     }
-    // dequeue(inqueue);
-    // enqueue(id, outqueue);
     sem_post(mutex); // *** exit CS ***
 
     sem_wait(turnstile_2); // 1st processes blocks here because 2nd process locks second in 1st if block
-    // at this point, the other process might or might not have been moved to outQueue
-    
     sem_post(turnstile_2); // allows paired process that comes after it to proceed
 
-    int otherId;
 
+    // get other ball's id
+    int otherId;
     sem_wait(mutex);
     if (isFirst) {
         firstId = deQueue(inqueue);
