@@ -5,7 +5,7 @@
 #include "stdbool.h"
 
 #define DUMMY_INTEGER 58327329
-#define QUEUE_SIZE 100
+#define QUEUE_SIZE 200
 #define INIT_QUEUE(qName) Queue qName = {.front = -1, .back = -1};
 
 /* constants */
@@ -15,8 +15,7 @@ int BLUE = 3;
 int NUM_PER_PACK;
 
 /* declare/initialize variables */
-int is_first = true;
-int *ball_ids; // will hold all ids in a pack
+int packed_count = 0;
 
 int red_count = 0;
 int green_count = 0;
@@ -37,7 +36,7 @@ sem_t green_turnstile_2;
 sem_t blue_turnstile_1;
 sem_t blue_turnstile_2;
 
-
+int numDeq;
 
 // ================================================
 // Start of Queue Definition
@@ -51,11 +50,8 @@ typedef struct PackerQueue {
 } Queue;
 
 INIT_QUEUE(red_inqueue);
-INIT_QUEUE(red_outqueue);
 INIT_QUEUE(green_inqueue);
-INIT_QUEUE(green_outqueue);
 INIT_QUEUE(blue_inqueue);
-INIT_QUEUE(blue_outqueue);
 
 void enQueue(int x, Queue *q) {
     if (q->back == QUEUE_SIZE - 1) {
@@ -119,8 +115,10 @@ void show(Queue *q)
 int at(Queue *q, int index) {
     int translatedIndex = q->front + index;
     if (translatedIndex < q->front || translatedIndex > q->back) {
-        printf("Index Out Of Bounds");
-        return -123456789;
+        printf(">>>>>");
+        printf("accessing %d, but queue = ", index);
+        show(q);
+        return DUMMY_INTEGER;
     }
     return q->arr[translatedIndex];
 }
@@ -132,7 +130,6 @@ int at(Queue *q, int index) {
 void packer_init(int balls_per_pack) {
     // Write initialization code here (called once at the start of the program).
     NUM_PER_PACK = balls_per_pack;
-    ball_ids = (int *) malloc(balls_per_pack * sizeof(int));
 
     sem_init(&red_turnstile_1, 0, 0);
     sem_init(&red_turnstile_2, 0, 1);
@@ -179,7 +176,6 @@ sem_t *getSecondTurnstile(int colour) {
     return NULL;
 }
 
-
 sem_t *getMutex(int colour) {
     if (colour == RED) {
         return &red_mutex;
@@ -213,17 +209,18 @@ Queue *getInQueue(int colour) {
     return NULL;
 }
 
-Queue *getOutQueue(int colour) {
-    if (colour == RED) {
-        return &red_outqueue;
-    } else if (colour == GREEN) {
-        return &green_outqueue;
-    } else if (colour == BLUE) {
-        return &blue_outqueue;
+void saveToOtherIds(int currId, int *other_ids, Queue *queue) {
+    int j = 0;
+    int i, idFromQueue;
+    for (i=0;i<NUM_PER_PACK;i++) {
+        idFromQueue = at(queue, i);
+        if (currId == idFromQueue) {
+            continue;
+        }
+        other_ids[j] = idFromQueue;
+        j++;
     }
-    return NULL;
 }
-
 
 void pack_ball(int colour, int id, int *other_ids) {
     sem_t *turnstile_1 = getFirstTurnstile(colour);
@@ -232,65 +229,53 @@ void pack_ball(int colour, int id, int *other_ids) {
     int *count = getCount(colour);
     Queue *inqueue = getInQueue(colour);
     
-    int otherId;
+    // these two lines prevents balls from the next group to pass before the group before it has been packed
+    sem_wait(turnstile_2); //1 -> 0 
+    sem_post(turnstile_2); //0 -> 1
 
     sem_wait(mutex); // *** enter CS ***
     *count = *count + 1;
     enQueue(id, inqueue);
     if (*count == NUM_PER_PACK) {
-        sem_wait(turnstile_2); //lock second
-        sem_post(turnstile_1); //unlock first
+        sem_wait(turnstile_2); // lock second 1 -> 0
+        sem_post(turnstile_1); // unlock first
     }
     sem_post(mutex); // *** exit CS ***
 
-    sem_wait(turnstile_1); // processes blocks here
-    sem_post(turnstile_1); // allows paired process to proceed
+    sem_wait(turnstile_1); // processes blocks here   at most 3   
+    sem_post(turnstile_1); // allows paired process to proceed 
 
     sem_wait(mutex); // *** enter CS ***
     *count = *count - 1;
     if (*count == 0) {
-        sem_wait(turnstile_1); //lock first (for next pair)
-        sem_post(turnstile_2); //unlock second turnstile (for balls in same pack alr waiting to be released)
+        sem_wait(turnstile_1); //lock first (for next group)
+        sem_post(turnstile_2); //unlock second turnstile (for balls in same pack alr waiting to be released) 0 -> 1
     }
     sem_post(mutex); // *** exit CS ***
 
     // 1st to (n-1)th processes blocks here because nth process locks second turnstile in 1st if block    
-    sem_wait(turnstile_2); 
+    sem_wait(turnstile_2); // 1 -> 0
     // once released, the order of 1st to (n-1)th processes going into "settle id segment" is non-deterministic
-    sem_post(turnstile_2); // allows other processes that comes after it to proceed
+    sem_post(turnstile_2); // allows other processes that comes after it to proceed 0 -> 1
 
-
-    /* settle ids */
-    
-    
+    /* save ids to other_ids */
     sem_wait(mutex);
-    if (is_first) {
-      //if you are the first guy reach this point, help all members in the group to save ids to ball_ids
-      int i;
-      for (i=0;i<NUM_PER_PACK;i++) {
-        ball_ids[i] = at(inqueue, i);
-      }
-
-      is_first = false;
-    } else if (isNth) {
-
-    } else {
-      //if you are the last guy, pop all the n items off the queue
-
-    }
-
-    
-    if (is_first) {
-        firstId = deQueue(inqueue);
-        otherId = peekQueue(inqueue);
-        is_first = false;
-    } else {
-        otherId = firstId;
-        deQueue(inqueue);
-        //reset
-        is_first = true;
-        firstId = DUMMY_INTEGER;
+    // printf("ball %d trying to access queue\n", id);
+    saveToOtherIds(id, other_ids, inqueue);
+    packed_count++;
+    if (packed_count == NUM_PER_PACK) {
+        // show(inqueue);
+        packed_count = 0;
+        // the last ball will dequeue n balls from queue
+        int i;
+        for (i=0;i<NUM_PER_PACK;i++) {
+            deQueue(inqueue);
+        }
+        // printf("ball %d triggered deque - %d\n",id, ++numDeq);
     }
     sem_post(mutex);    
-    return otherId;
+    
 }
+
+//607 trying to access qeue before there are enough balls
+// meaning  607 was not getting blocked 
