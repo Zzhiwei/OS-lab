@@ -62,6 +62,15 @@ int peekQueue(Queue *q) {
     }
 }
 
+int at(Queue *q, int index) {
+    int translatedIndex = q->front + index;
+    if (translatedIndex < q->front || translatedIndex > q->back) {
+        printf("Index Out Of Bounds");
+        return -123456789;
+    }
+    return q->arr[translatedIndex];
+}
+
 void show(Queue *q)
 {
     if (q->front == -1 || q->front > q->back)
@@ -106,4 +115,14 @@ int main() {
     enQueue(9, &red_queue);
     enQueue(8, &red_queue);
     show(&red_queue);
+    enQueue(91, &red_queue);
+    enQueue(43, &red_queue);
+    enQueue(293, &red_queue);
+    enQueue(12, &red_queue);
+    show(&red_queue);
+    printf("element at %d is %d\n", 0, at(&red_queue, 0));
+    printf("element at %d is %d\n", 1, at(&red_queue, 1));
+    printf("element at %d is %d\n", 2, at(&red_queue, 2));
+    printf("element at %d is %d\n", 4, at(&red_queue, 4));
+    printf("element at %d is %d\n", 5, at(&red_queue, 5));
 }

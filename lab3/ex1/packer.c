@@ -3,6 +3,7 @@
 #include "stdio.h"
 #include "stdbool.h"
 
+#define DUMMY_INTEGER 58327329
 #define QUEUE_SIZE 100
 #define INIT_QUEUE(qName) Queue qName = {.front = -1, .back = -1};
 
@@ -66,11 +67,11 @@ void enQueue(int x, Queue *q) {
 int deQueue(Queue *q) {
     if (q->front == -1 || q->front > q->back) {
         printf("Queue Underflow\n");
-    } else {
-        int res = q->arr[q->front];
-        q->front++;
-        return res;
+        return DUMMY_INTEGER;
     }
+    int res = q->arr[q->front];
+    q->front++;
+    return res;
 }
 
 int peekQueue(Queue *q) {
@@ -146,6 +147,7 @@ sem_t *getFirstTurnstile(int colour) {
     } else if (colour == BLUE) {
         return &blue_turnstile_1;
     }
+    return NULL;
 }
 
 sem_t *getSecondTurnstile(int colour) {
@@ -156,6 +158,7 @@ sem_t *getSecondTurnstile(int colour) {
     } else if (colour == BLUE) {
         return &blue_turnstile_2;
     }
+    return NULL;
 }
 
 
@@ -167,6 +170,7 @@ sem_t *getMutex(int colour) {
     } else if (colour == BLUE) {
         return &blue_mutex;
     }
+    return NULL;
 }
 
 int *getCount(int colour) {
@@ -177,6 +181,7 @@ int *getCount(int colour) {
     } else if (colour == BLUE) {
         return &blue_count;
     }
+    return NULL;
 }
 
 Queue *getInQueue(int colour) {
@@ -187,6 +192,7 @@ Queue *getInQueue(int colour) {
     } else if (colour == BLUE) {
         return &blue_inqueue;
     }
+    return NULL;
 }
 
 Queue *getOutQueue(int colour) {
@@ -197,6 +203,7 @@ Queue *getOutQueue(int colour) {
     } else if (colour == BLUE) {
         return &blue_outqueue;
     }
+    return NULL;
 }
 
 int pack_ball(int colour, int id) {
@@ -205,6 +212,8 @@ int pack_ball(int colour, int id) {
     sem_t *mutex = getMutex(colour);
     int *count = getCount(colour);
     Queue *inqueue = getInQueue(colour);
+    
+    int otherId;
 
     sem_wait(mutex); // *** enter CS ***
     *count = *count + 1;
@@ -226,12 +235,10 @@ int pack_ball(int colour, int id) {
     }
     sem_post(mutex); // *** exit CS ***
 
-    sem_wait(turnstile_2); // 1st processes blocks here because 2nd process locks second in 1st if block
+    sem_wait(turnstile_2); // 1st processes blocks here because 2nd process locks second in 1st if block    
     sem_post(turnstile_2); // allows paired process that comes after it to proceed
 
-
-    // get other ball's id
-    int otherId;
+    // the following cannot be placed btw wait and post turnstile_2 above, dk why
     sem_wait(mutex);
     if (isFirst) {
         firstId = deQueue(inqueue);
@@ -242,8 +249,9 @@ int pack_ball(int colour, int id) {
         deQueue(inqueue);
         //reset
         isFirst = true;
-        firstId = -99999;
+        firstId = DUMMY_INTEGER;
     }
     sem_post(mutex);
+    
     return otherId;
 }
