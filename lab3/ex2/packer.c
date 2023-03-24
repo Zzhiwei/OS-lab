@@ -15,7 +15,9 @@ int BLUE = 3;
 int NUM_PER_PACK;
 
 /* declare/initialize variables */
-int packed_count = 0;
+int red_packed_count = 0;
+int green_packed_count = 0;
+int blue_packed_count = 0;
 
 int red_count = 0;
 int green_count = 0;
@@ -29,12 +31,16 @@ sem_t red_mutex;
 sem_t green_mutex;
 sem_t blue_mutex;
 
+// 1 - first barrier, 2 - 2nd barrier, 3 - group barrier
 sem_t red_turnstile_1;
 sem_t red_turnstile_2;
+sem_t red_turnstile_3; 
 sem_t green_turnstile_1;
 sem_t green_turnstile_2;
+sem_t green_turnstile_3;
 sem_t blue_turnstile_1;
 sem_t blue_turnstile_2;
+sem_t blue_turnstile_3;
 
 int numDeq;
 
@@ -133,10 +139,13 @@ void packer_init(int balls_per_pack) {
 
     sem_init(&red_turnstile_1, 0, 0);
     sem_init(&red_turnstile_2, 0, 1);
+    sem_init(&red_turnstile_3, 0, NUM_PER_PACK);
     sem_init(&green_turnstile_1, 0, 0);
     sem_init(&green_turnstile_2, 0, 1);
+    sem_init(&green_turnstile_3, 0, NUM_PER_PACK);
     sem_init(&blue_turnstile_1, 0, 0);
     sem_init(&blue_turnstile_2, 0, 1);
+    sem_init(&blue_turnstile_3, 0, NUM_PER_PACK);
 
     sem_init(&red_mutex, 0, 1);
     sem_init(&green_mutex, 0, 1);
@@ -148,10 +157,13 @@ void packer_destroy(void) {
     // Write deinitialization code here (called once at the end of the program).
     sem_destroy(&red_turnstile_1);
     sem_destroy(&red_turnstile_2);
+    sem_destroy(&red_turnstile_3);
     sem_destroy(&green_turnstile_1);
     sem_destroy(&green_turnstile_2);
+    sem_destroy(&green_turnstile_3);
     sem_destroy(&blue_turnstile_1);
     sem_destroy(&blue_turnstile_2);
+    sem_destroy(&blue_turnstile_3);
 }
 
 sem_t *getFirstTurnstile(int colour) {
@@ -176,6 +188,17 @@ sem_t *getSecondTurnstile(int colour) {
     return NULL;
 }
 
+sem_t *getGroupTurnstile(int colour) {
+    if (colour == RED) {
+        return &red_turnstile_3;
+    } else if (colour == GREEN) {
+        return &green_turnstile_3;
+    } else if (colour == BLUE) {
+        return &blue_turnstile_3;
+    }
+    return NULL;
+}
+
 sem_t *getMutex(int colour) {
     if (colour == RED) {
         return &red_mutex;
@@ -194,6 +217,17 @@ int *getCount(int colour) {
         return &green_count;
     } else if (colour == BLUE) {
         return &blue_count;
+    }
+    return NULL;
+}
+
+int *getPackedCount(int colour) {
+    if (colour == RED) {
+        return &red_packed_count;
+    } else if (colour == GREEN) {
+        return &green_packed_count;
+    } else if (colour == BLUE) {
+        return &blue_packed_count;
     }
     return NULL;
 }
@@ -222,60 +256,78 @@ void saveToOtherIds(int currId, int *other_ids, Queue *queue) {
     }
 }
 
+void enterCriticalSection(sem_t *mutex) {
+    sem_wait(mutex);
+}
+
+void exitCriticalSection(sem_t *mutex) {
+    sem_post(mutex);
+}
+
 void pack_ball(int colour, int id, int *other_ids) {
     sem_t *turnstile_1 = getFirstTurnstile(colour);
     sem_t *turnstile_2 = getSecondTurnstile(colour);
+    sem_t *group_turnstile = getGroupTurnstile(colour);
     sem_t *mutex = getMutex(colour);
+
     int *count = getCount(colour);
+    int *packed_count = getPackedCount(colour);
     Queue *inqueue = getInQueue(colour);
     
-    // these two lines prevents balls from the next group to pass before the group before it has been packed
-    sem_wait(turnstile_2); //1 -> 0 
-    sem_post(turnstile_2); //0 -> 1
+    
+    // only allow N numbers of balls to pass
+    // prevents balls to be packed in the next group to execute barrier code which breaks it
+    sem_wait(group_turnstile);
+    
 
-    sem_wait(mutex); // *** enter CS ***
+    /* ======================== FIRST BARRIER ======================== */
+    enterCriticalSection(mutex);
     *count = *count + 1;
     enQueue(id, inqueue);
     if (*count == NUM_PER_PACK) {
         sem_wait(turnstile_2); // lock second 1 -> 0
         sem_post(turnstile_1); // unlock first
     }
-    sem_post(mutex); // *** exit CS ***
+    exitCriticalSection(mutex);
 
-    sem_wait(turnstile_1); // processes blocks here   at most 3   
+    sem_wait(turnstile_1); // processes blocks here
     sem_post(turnstile_1); // allows paired process to proceed 
 
-    sem_wait(mutex); // *** enter CS ***
+    
+    /* ======================== SECOND BARRIER ======================== */
+    enterCriticalSection(mutex);
     *count = *count - 1;
     if (*count == 0) {
         sem_wait(turnstile_1); //lock first (for next group)
         sem_post(turnstile_2); //unlock second turnstile (for balls in same pack alr waiting to be released) 0 -> 1
     }
-    sem_post(mutex); // *** exit CS ***
+    exitCriticalSection(mutex);
 
-    // 1st to (n-1)th processes blocks here because nth process locks second turnstile in 1st if block    
+    // 1st to (n-1)th processes blocks here because nth process locks second turnstile in 1st if-block
+    // once released, the order of 1st to (n-1)th processes going into "settle id segment" is non-deterministic    
     sem_wait(turnstile_2); // 1 -> 0
-    // once released, the order of 1st to (n-1)th processes going into "settle id segment" is non-deterministic
-    sem_post(turnstile_2); // allows other processes that comes after it to proceed 0 -> 1
+    
 
-    /* save ids to other_ids */
-    sem_wait(mutex);
-    // printf("ball %d trying to access queue\n", id);
+    enterCriticalSection(mutex);
+    printf("ball(%d), color(%d) - before saving id: ", id, colour);
+    show(inqueue);
     saveToOtherIds(id, other_ids, inqueue);
-    packed_count++;
-    if (packed_count == NUM_PER_PACK) {
-        // show(inqueue);
-        packed_count = 0;
+    // note bracket is a must here (C quirks)
+    (*packed_count)++;
+    if (*packed_count == NUM_PER_PACK) {
+        printf("ball %d triggered deque - %d: ",id, ++numDeq);
+        show(inqueue);
+        *packed_count = 0;
         // the last ball will dequeue n balls from queue
         int i;
         for (i=0;i<NUM_PER_PACK;i++) {
             deQueue(inqueue);
+            // IMPORTANT: can only release group turnstile when the last ball finishes and the packed_count has been reset! 
+            sem_post(group_turnstile);
         }
-        // printf("ball %d triggered deque - %d\n",id, ++numDeq);
     }
-    sem_post(mutex);    
-    
-}
+    exitCriticalSection(mutex);
 
-//607 trying to access qeue before there are enough balls
-// meaning  607 was not getting blocked 
+    sem_post(turnstile_2); // 0 -> 1
+
+}
