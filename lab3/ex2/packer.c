@@ -274,11 +274,8 @@ void pack_ball(int colour, int id, int *other_ids) {
     int *packed_count = getPackedCount(colour);
     Queue *inqueue = getInQueue(colour);
     
-    
-    // only allow N numbers of balls to pass
-    // prevents balls to be packed in the next group to execute barrier code which breaks it
+    // prevents balls to be packed in the next group to start executing before the current group has been packed
     sem_wait(group_turnstile);
-    
 
     /* ======================== FIRST BARRIER ======================== */
     enterCriticalSection(mutex);
@@ -290,35 +287,26 @@ void pack_ball(int colour, int id, int *other_ids) {
     }
     exitCriticalSection(mutex);
 
-    sem_wait(turnstile_1); // processes blocks here
-    sem_post(turnstile_1); // allows paired process to proceed 
+    sem_wait(turnstile_1); // first barrier
+    sem_post(turnstile_1);
 
-    
     /* ======================== SECOND BARRIER ======================== */
     enterCriticalSection(mutex);
     *count = *count - 1;
     if (*count == 0) {
-        sem_wait(turnstile_1); //lock first (for next group)
-        sem_post(turnstile_2); //unlock second turnstile (for balls in same pack alr waiting to be released) 0 -> 1
+        sem_wait(turnstile_1); // lock first (for next group)
+        sem_post(turnstile_2); // unlock second (for balls in same pack alr waiting to be released) 0 -> 1
     }
     exitCriticalSection(mutex);
 
-    // 1st to (n-1)th processes blocks here because nth process locks second turnstile in 1st if-block
-    // once released, the order of 1st to (n-1)th processes going into "settle id segment" is non-deterministic    
-    sem_wait(turnstile_2); // 1 -> 0
-    
+    sem_wait(turnstile_2); // second barrier,  1 -> 0
 
+    /* ======================== SAVE IDs ======================== */
     enterCriticalSection(mutex);
-    printf("ball(%d), color(%d) - before saving id: ", id, colour);
-    show(inqueue);
     saveToOtherIds(id, other_ids, inqueue);
-    // note bracket is a must here (C quirks)
     (*packed_count)++;
     if (*packed_count == NUM_PER_PACK) {
-        printf("ball %d triggered deque - %d: ",id, ++numDeq);
-        show(inqueue);
         *packed_count = 0;
-        // the last ball will dequeue n balls from queue
         int i;
         for (i=0;i<NUM_PER_PACK;i++) {
             deQueue(inqueue);
