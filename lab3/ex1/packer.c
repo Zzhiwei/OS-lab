@@ -11,8 +11,9 @@ int RED = 1;
 int GREEN = 2;
 int BLUE = 3;
 
-int isFirst = true;
-int firstId;
+int red_packed_count = 0;
+int green_packed_count = 0;
+int blue_packed_count = 0;
 
 int red_count = 0;
 int green_count = 0;
@@ -26,12 +27,16 @@ sem_t red_mutex;
 sem_t green_mutex;
 sem_t blue_mutex;
 
+// 1 - first barrier, 2 - 2nd barrier, 3 - group barrier
 sem_t red_turnstile_1;
 sem_t red_turnstile_2;
+sem_t red_turnstile_3; 
 sem_t green_turnstile_1;
 sem_t green_turnstile_2;
+sem_t green_turnstile_3;
 sem_t blue_turnstile_1;
 sem_t blue_turnstile_2;
+sem_t blue_turnstile_3;
 
 // ================================================
 // Start of Queue Definition
@@ -45,11 +50,8 @@ typedef struct PackerQueue {
 } Queue;
 
 INIT_QUEUE(red_inqueue);
-INIT_QUEUE(red_outqueue);
 INIT_QUEUE(green_inqueue);
-INIT_QUEUE(green_outqueue);
 INIT_QUEUE(blue_inqueue);
-INIT_QUEUE(blue_outqueue);
 
 void enQueue(int x, Queue *q) {
     if (q->back == QUEUE_SIZE - 1) {
@@ -110,6 +112,17 @@ void show(Queue *q)
     }
 } 
 
+int at(Queue *q, int index) {
+    int translatedIndex = q->front + index;
+    if (translatedIndex < q->front || translatedIndex > q->back) {
+        printf(">>>>>");
+        printf("accessing %d, but queue = ", index);
+        show(q);
+        return DUMMY_INTEGER;
+    }
+    return q->arr[translatedIndex];
+}
+
 // ================================================
 // End of Queue Definition
 // ================================================
@@ -118,10 +131,13 @@ void packer_init(void) {
     // Write initialization code here (called once at the start of the program).
     sem_init(&red_turnstile_1, 0, 0);
     sem_init(&red_turnstile_2, 0, 1);
+    sem_init(&red_turnstile_3, 0, 2);
     sem_init(&green_turnstile_1, 0, 0);
     sem_init(&green_turnstile_2, 0, 1);
+    sem_init(&green_turnstile_3, 0, 2);
     sem_init(&blue_turnstile_1, 0, 0);
     sem_init(&blue_turnstile_2, 0, 1);
+    sem_init(&blue_turnstile_3, 0, 2);
 
     sem_init(&red_mutex, 0, 1);
     sem_init(&green_mutex, 0, 1);
@@ -133,10 +149,13 @@ void packer_destroy(void) {
     // Write deinitialization code here (called once at the end of the program).
     sem_destroy(&red_turnstile_1);
     sem_destroy(&red_turnstile_2);
+    sem_destroy(&red_turnstile_3);
     sem_destroy(&green_turnstile_1);
     sem_destroy(&green_turnstile_2);
+    sem_destroy(&green_turnstile_3);
     sem_destroy(&blue_turnstile_1);
     sem_destroy(&blue_turnstile_2);
+    sem_destroy(&blue_turnstile_3);
 }
 
 sem_t *getFirstTurnstile(int colour) {
@@ -161,6 +180,16 @@ sem_t *getSecondTurnstile(int colour) {
     return NULL;
 }
 
+sem_t *getGroupTurnstile(int colour) {
+    if (colour == RED) {
+        return &red_turnstile_3;
+    } else if (colour == GREEN) {
+        return &green_turnstile_3;
+    } else if (colour == BLUE) {
+        return &blue_turnstile_3;
+    }
+    return NULL;
+}
 
 sem_t *getMutex(int colour) {
     if (colour == RED) {
@@ -184,6 +213,17 @@ int *getCount(int colour) {
     return NULL;
 }
 
+int *getPackedCount(int colour) {
+    if (colour == RED) {
+        return &red_packed_count;
+    } else if (colour == GREEN) {
+        return &green_packed_count;
+    } else if (colour == BLUE) {
+        return &blue_packed_count;
+    }
+    return NULL;
+}
+
 Queue *getInQueue(int colour) {
     if (colour == RED) {
         return &red_inqueue;
@@ -195,25 +235,17 @@ Queue *getInQueue(int colour) {
     return NULL;
 }
 
-Queue *getOutQueue(int colour) {
-    if (colour == RED) {
-        return &red_outqueue;
-    } else if (colour == GREEN) {
-        return &green_outqueue;
-    } else if (colour == BLUE) {
-        return &blue_outqueue;
-    }
-    return NULL;
-}
-
 int pack_ball(int colour, int id) {
     sem_t *turnstile_1 = getFirstTurnstile(colour);
     sem_t *turnstile_2 = getSecondTurnstile(colour);
+    sem_t *group_turnstile = getGroupTurnstile(colour);
     sem_t *mutex = getMutex(colour);
+
     int *count = getCount(colour);
+    int *packed_count = getPackedCount(colour);
     Queue *inqueue = getInQueue(colour);
-    
-    int otherId;
+
+    sem_wait(group_turnstile);
 
     sem_wait(mutex); // *** enter CS ***
     *count = *count + 1;
@@ -236,22 +268,32 @@ int pack_ball(int colour, int id) {
     sem_post(mutex); // *** exit CS ***
 
     sem_wait(turnstile_2); // 1st processes blocks here because 2nd process locks second in 1st if block    
-    sem_post(turnstile_2); // allows paired process that comes after it to proceed
 
-    // the following cannot be placed btw wait and post turnstile_2 above, dk why
+    int otherId;
+    
+
     sem_wait(mutex);
-    if (isFirst) {
-        firstId = deQueue(inqueue);
-        otherId = peekQueue(inqueue);
-        isFirst = false;
+    int firstInQ = at(inqueue, 0);
+    int secondInQ = at(inqueue, 1);
+    if (firstInQ == id) {
+        otherId = secondInQ;
     } else {
-        otherId = firstId;
-        deQueue(inqueue);
-        //reset
-        isFirst = true;
-        firstId = DUMMY_INTEGER;
+        otherId = firstInQ;
+    }
+
+    (*packed_count)++;
+    if (*packed_count == 2) {
+        *packed_count = 0;
+        int i;
+        for (i=0;i<2;i++) {
+            deQueue(inqueue);
+            // IMPORTANT: can only release group turnstile when the last ball finishes and the packed_count has been reset! 
+            sem_post(group_turnstile);
+        }
     }
     sem_post(mutex);
+    
+    sem_post(turnstile_2); // allows paired process that comes after it to proceed
     
     return otherId;
 }
