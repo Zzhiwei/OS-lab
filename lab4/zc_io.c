@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 
+
 // The zc_file struct is analogous to the FILE struct that you get from fopen.
 struct zc_file {
     char* mmap_data;
@@ -42,7 +43,7 @@ zc_file* zc_open(const char* path) {
 
     size_t file_size_in_bytes = fs.st_size;
 
-    char* file_data = mmap(NULL, file_size_in_bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    char* file_data = mmap(NULL, file_size_in_bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 
     zc_file* file = (zc_file*)malloc(sizeof(zc_file));
     file->fd = fd;
@@ -73,12 +74,21 @@ const char* zc_read_start(zc_file* file, size_t* size) {
 }
 
 void zc_read_end(zc_file* file) {
-    // To implement
+    file->mmap_offset = 0;
 }
 
 char* zc_write_start(zc_file* file, size_t size) {
-    // To implement
-    return NULL;
+    size_t remaining_size = file->file_size - file->mmap_offset;
+    // if we are exceeding file size, then need to expand fd & mmap & remap
+    if (remaining_size < size) {
+        size_t old_size = file->file_size;
+        file->file_size = 2 * old_size;
+        ftruncate(file->fd, file->file_size);
+        file->mmap_data = mremap(file->mmap_data, old_size, 2 * old_size, MREMAP_MAYMOVE);
+    }
+    char* res = &file->mmap_data[file->mmap_offset];
+    file->mmap_offset += size;
+    return res;
 }
 
 void zc_write_end(zc_file* file) {
