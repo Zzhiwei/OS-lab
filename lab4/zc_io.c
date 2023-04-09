@@ -28,7 +28,7 @@ struct zc_file {
  **************/
 
 zc_file* zc_open(const char* path) {
-    int fd = open(path, O_CREAT | O_RDWR);
+    int fd = open(path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
     if (fd == -1) {
         perror("cannot open file");
         return NULL;
@@ -74,17 +74,18 @@ const char* zc_read_start(zc_file* file, size_t* size) {
 }
 
 void zc_read_end(zc_file* file) {
-    file->mmap_offset = 0;
 }
 
 char* zc_write_start(zc_file* file, size_t size) {
-    size_t remaining_size = file->file_size - file->mmap_offset;
-    // if we are exceeding file size, then need to expand fd & mmap & remap
-    if (remaining_size < size) {
+    
+    size_t required_size = file->mmap_offset + size;
+    if (required_size > file->file_size) {
         size_t old_size = file->file_size;
-        file->file_size = 2 * old_size;
-        ftruncate(file->fd, file->file_size);
-        file->mmap_data = mremap(file->mmap_data, old_size, 2 * old_size, MREMAP_MAYMOVE);
+        file->file_size = required_size;
+        ftruncate(file->fd, required_size);
+        munmap(file->mmap_data, old_size);
+        file->mmap_data = mmap(NULL, required_size, PROT_READ | PROT_WRITE, MAP_SHARED, file->fd, 0);
+        // file->mmap_data = mremap(file->mmap_data, old_size, required_size, MREMAP_MAYMOVE);
     }
     char* res = &file->mmap_data[file->mmap_offset];
     file->mmap_offset += size;
@@ -92,7 +93,7 @@ char* zc_write_start(zc_file* file, size_t size) {
 }
 
 void zc_write_end(zc_file* file) {
-    // To implement
+    msync(file->mmap_data, file->file_size, MS_SYNC);
 }
 
 /**************

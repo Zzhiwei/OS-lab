@@ -351,9 +351,12 @@ int main(int argc, char* argv[]) {
             eprintf("writing %zu to expected offset %zu\n", write_size, offset);
 
             char* write_ptr = zc_write_start(zcfile, write_size);
+            printf("1\n");
             FAIL_IF(!write_ptr, "zc_write_start failed - returned NULL\n");
             memcpy(write_ptr, randdata + offset, write_size);
+            printf("2\n");
             zc_write_end(zcfile);
+            printf("3\n");
 
             offset += write_size;
 
